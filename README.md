@@ -101,6 +101,7 @@ ui = AmpDesigner();          % 打开窗口（自动探测并加载 NMOS/PMOS �
 
 > **运行时最小集 = 下面前 6 行，共 15 个 `.m`**。
 | 文件 | 说明 |
+
 |---|---|
 | `AmpDesigner.m` | 大顶层（入口），跑这个启动界面 |
 | `pickFont.m` / `pickCjkFont.m` / `pickLatinFont.m` / `pickMonoFont.m` | 字体探测纯函数（跨平台，防中文方块） |
