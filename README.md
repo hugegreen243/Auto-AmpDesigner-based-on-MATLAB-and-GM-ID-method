@@ -1,0 +1,1 @@
+# Auto-AmpDesigner-based-on-MATLAB-and-GM-ID-method
