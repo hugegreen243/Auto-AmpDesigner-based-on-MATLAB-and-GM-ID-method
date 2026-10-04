@@ -111,9 +111,4 @@ ui = AmpDesigner();          % 打开窗口（自动探测并加载 NMOS/PMOS �
 ├── ampDesignTable.m          结果表（16 列）
 ├── ampDesignReport.m         文本设计报告
 ├── pickFont.m + 3 个字体探测  跨平台字体选取
-├── README_gmid_gui.md        完整开发文档
-├── smic18bcd_gmIdData_*/     可加载的 N/P gm/ID 数据（格式 B）
-├── tsmc18rf_gmIdData_*/      TSMC 数据（格式 A，暂不支持加载）
-├── out/                      测试日志 / 截图（运行不需要）
-└── backup/                   旧实现 + 测试脚本 + 设计稿
 ```
