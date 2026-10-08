@@ -53,12 +53,12 @@ L{end+1} = sprintf('  实际使用的 gm/ID          = %.4f 1/V', res.gmidInUsed
 L{end+1} = sprintf('  SR = ISS/CL      = %.6g V/us (指标 %.6g V/us)', res.sr*1e-6, res.srReq*1e-6);
 L{end+1} = sprintf('  静态功耗 VDD*ISS = %.6g W (%.6g uW)', res.power, res.power*1e6);
 L{end+1} = sprintf('  输入对择优目标   = %s', res.objectiveUsed);
-L{end+1} = sprintf('  输入对选中工作点 = L=%.4g um, VDS=%.3g V, Id/W=%.5g A/m, Vgs=%.4g V, Vdsat=%.4g V, gm/gds=%.3f', ...
-    res.inputSel.L*1e6, res.inputSel.VDS, res.inputSel.IdW, res.inputSel.Vgs, res.inputSel.Vdsat, res.inputSel.selfGain);
+L{end+1} = sprintf('  输入对选中工作点 = L=%.4g um, VDS=%.3g V, Id/W=%.5g A/m, Vgs=%.4g V, Vth=%.4g V, Vdsat=%.4g V, gm/gds=%.3f, 工作区=%s', ...
+    res.inputSel.L*1e6, res.inputSel.VDS, res.inputSel.IdW, res.inputSel.Vgs, res.inputSel.Vth, res.inputSel.Vdsat, res.inputSel.selfGain, res.inputSel.sat);
 L{end+1} = '';
-L{end+1} = '--- 3. 器件工作点、尺寸与饱和判定 ---';
+L{end+1} = '--- 3. 器件工作点、尺寸与工作区（region）---';
 L{end+1} = sprintf(['  %-5s %-3s %-12s %8s %7s %7s %7s %7s %8s %8s %8s %8s %7s %8s %6s %6s'], ...
-    '器件','型','角色','Id(uA)','gm/ID','L(um)','VDS(V)','Vgs(V)','Vdsat(V)','|VDS|','裕量(V)','fT(GHz)','gm/gds','W(um)','饱和','来源');
+    '器件','型','角色','Id(uA)','gm/ID','L(um)','VDS(V)','Vgs(V)','Vdsat(V)','|VDS|','裕量(V)','fT(GHz)','gm/gds','W(um)','工作区','来源');
 cols = res.tableCols;                                       %#ok<NASGU>
 for k = 1:size(res.tableData,1)
     r = res.tableData(k,:);
@@ -66,7 +66,8 @@ for k = 1:size(res.tableData,1)
         r{1}, r{2}, r{3}, r{4}, r{5}, r{6}, r{7}, r{8}, r{9}, r{10}, r{11}, r{12}, r{13}, r{14}, r{15}, r{16});
 end
 L{end+1} = '';
-L{end+1} = '  饱和判据：|VDS|act - Vdsat >= 0.05 V 记“饱和”，0~0.05 V 记“临界”，<0 记“不饱和”。';
+L{end+1} = '  工作区判据：截止 = Vgs<Vth；饱和 = Vgs>=Vth 且 |VDS|>=Vdsat；线性 = Vgs>=Vth 且 |VDS|<Vdsat。';
+L{end+1} = '  裕量(V) = |VDS|-Vdsat，0~0.05 V 记“临界”（仅告警，仍算饱和）。Vth 来自 _vth.txt（可选）。';
 L{end+1} = '  节点电压：';
 if isfield(res, 'nodes')
     for k = 1:numel(res.nodes)
@@ -92,7 +93,7 @@ else
 end
 L{end+1} = '  注：R_out 较小的那一侧主导增益；来源=无数据 的器件不参与该侧增益估算。';
 L{end+1} = sprintf('  Vout  : %.4g V ~ %.4g V（摆幅 %.4g V）', res.voutMin, res.voutMax, res.voutSwing);
-L{end+1} = sprintf('  Vcm   : >= %.4g V；上限估算 %.4g V（缺 Vth/PMOS 数据，仅供参考）', res.vcmMin, res.vcmMaxEst);
+L{end+1} = sprintf('  Vcm   : >= %.4g V；上限估算 %.4g V（按 Vgs 估算，仅供参考）', res.vcmMin, res.vcmMaxEst);
 L{end+1} = '';
 L{end+1} = '--- 5. 提示 ---';
 if isempty(res.warnings)

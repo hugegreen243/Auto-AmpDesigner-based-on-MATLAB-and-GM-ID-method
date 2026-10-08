@@ -31,19 +31,27 @@ classdef GmIdLUT < handle
 % 用法：
 %     lut = GmIdLUT('D:\myprj\prj_data\smic18bcd_gmIdData_nmos2v', ...
 %                   'smic18bcd_gmIdData_nmos2v');
-%     q = lut.lookup(0.5e-6, 0.4, 12);       % -> Id/W, Vgs, Vdsat, fT, gm/gds
+%     q = lut.lookup(0.5e-6, 0.4, 12);       % -> Id/W, Vgs, Vdsat, fT, gm/gds, (Vth)
 %     W = 10e-6 / q.IdW;                     % 目标 Id = 10 uA 时的宽度
+%
+% 可选指标 V_TH：若目录里存在 <prefix>_vth.txt，则一并加载并可用 q.Vth 查询
+%     （用于「截止」区判定：Vgs < Vth）。没有该文件时 q.Vth 全为 NaN，
+%     lut.hasVth=false，其它指标与公共 gm/ID 范围完全不受影响。
 %
 % 兼容 MATLAB R2018b：不用 string、不用隐式扩展、只依赖 base MATLAB。
 
     %% ---------------- 常量 ----------------
     properties (Constant)
-        % 文件后缀 / 内部字段名 / 显示名 / 单位 / 是否按 log10 建 LUT
-        FILESUFFIX  = {'currentDensity','vgs','overdrive','transientFreq','selfGain'};
-        METRICKEY   = {'currentDensity','vgs','vdsat','fug','selfGain'};
-        METRICLABEL = {'I_D/W (电流密度)','V_GS','V_DSAT','f_T','gm/gds'};
-        METRICUNIT  = {'A/m  (= uA/um)','V','V','Hz','-'};
-        METRICLOG   = [true false false false false];
+        % 文件后缀 / 内部字段名 / 显示名 / 单位 / 是否按 log10 建 LUT / 是否必需
+        %   前 5 个是必需指标（缺文件即报错）；vth 是**可选**指标：
+        %   目录里有 <prefix>_vth.txt 就加载（用于 region 判定的「截止」区），
+        %   没有就整片 NaN，且**不参与**公共 gm/ID 范围交集（免得缩窄其它指标）。
+        FILESUFFIX  = {'currentDensity','vgs','overdrive','transientFreq','selfGain','vth'};
+        METRICKEY   = {'currentDensity','vgs','vdsat','fug','selfGain','vth'};
+        METRICLABEL = {'I_D/W (电流密度)','V_GS','V_DSAT','f_T','gm/gds','V_TH'};
+        METRICUNIT  = {'A/m  (= uA/um)','V','V','Hz','-','V'};
+        METRICLOG   = [true false false false false false];
+        METRICREQ   = [true true true true true false];
         DEFAULT_NGM = 400;
     end
 
@@ -63,6 +71,7 @@ classdef GmIdLUT < handle
         nGm          = 0;
         blockCount   = 0;
         filledSlices = 0;         % 插值补齐的缺失 (L,VDS) 切片数
+        hasVth       = false;     % 是否加载到了可选指标 V_TH
         isBuilt      = false;
         buildSeconds = 0;
         log          = {};        % 构建过程的提示信息
@@ -126,24 +135,32 @@ classdef GmIdLUT < handle
     methods (Access = private)
         function loadBlocks(obj)
             n = numel(obj.METRICKEY);
+            req = obj.METRICREQ;
             allBlocks = cell(1, n);
 
-            % ---- 1) 先把 5 个文件都解析出来 ----
+            % ---- 1) 解析各文件（必需指标缺文件即报错；可选指标缺文件则跳过）----
             for k = 1:n
                 fname = sprintf('%s_%s.txt', obj.prefix, obj.FILESUFFIX{k});
                 fpath = fullfile(obj.dataDir, fname);
                 if exist(fpath, 'file') ~= 2
-                    error('GmIdLUT:missingFile', '缺少数据文件: %s', fpath);
+                    if req(k)
+                        error('GmIdLUT:missingFile', '缺少数据文件: %s', fpath);
+                    end
+                    obj.log{end+1} = sprintf('（可选）未找到 %s：%s 不可用，其它指标不受影响', ...
+                        fname, obj.METRICKEY{k}); %#ok<AGROW>
+                    allBlocks{k} = struct('L', {}, 'VDS', {}, 'g', {}, 'y', {});
+                    continue;
                 end
                 allBlocks{k} = GmIdLUT.parseBlocks(fpath);
-                if isempty(allBlocks{k})
+                if isempty(allBlocks{k}) && req(k)
                     error('GmIdLUT:emptyFile', '文件里没有解析到数据块: %s', fpath);
                 end
             end
 
-            % ---- 2) 汇总 (L, VDS) 网格（取所有文件的并集）----
+            % ---- 2) 汇总 (L, VDS) 网格（取所有非空文件的并集）----
             Lall = []; VDSall = []; nblk = 0;
             for k = 1:n
+                if isempty(allBlocks{k}), continue; end
                 Lall   = [Lall,   [allBlocks{k}.L]];   %#ok<AGROW>
                 VDSall = [VDSall, [allBlocks{k}.VDS]]; %#ok<AGROW>
                 nblk   = nblk + numel(allBlocks{k});
@@ -157,9 +174,10 @@ classdef GmIdLUT < handle
             end
             obj.blockCount = nblk;
 
-            % ---- 3) 公共 gm/ID 范围：所有指标所有 block 的交集 ----
+            % ---- 3) 公共 gm/ID 范围：只用「必需」指标求交集（可选 vth 不参与）----
             gLo = -inf; gHi = inf;
             for k = 1:n
+                if ~req(k), continue; end
                 for b = 1:numel(allBlocks{k})
                     g = allBlocks{k}(b).g;
                     if numel(g) >= 2
@@ -177,6 +195,12 @@ classdef GmIdLUT < handle
             % ---- 4) 每个指标逐 block 插值到公共网格 ----
             nNan = zeros(1, n);
             for k = 1:n
+                if isempty(allBlocks{k})
+                    % 可选指标缺失：整片 NaN（查询返回 NaN；不参与 valid；不补片）
+                    obj.grid.(obj.METRICKEY{k}) = nan(obj.nL, obj.nVDS, obj.nGm);
+                    obj.valRange.(obj.METRICKEY{k}) = [NaN NaN];
+                    continue;
+                end
                 arr  = nan(obj.nL, obj.nVDS, obj.nGm);
                 vmin = inf; vmax = -inf;
                 for b = 1:numel(allBlocks{k})
@@ -210,7 +234,12 @@ classdef GmIdLUT < handle
                     vmax = max(vmax, max(y));
                 end
                 if ~isfinite(vmin)
-                    error('GmIdLUT:emptyMetric', '指标 %s 没有任何有效数据。', obj.METRICKEY{k});
+                    if req(k)
+                        error('GmIdLUT:emptyMetric', '指标 %s 没有任何有效数据。', obj.METRICKEY{k});
+                    end
+                    obj.grid.(obj.METRICKEY{k}) = arr;
+                    obj.valRange.(obj.METRICKEY{k}) = [NaN NaN];
+                    continue;
                 end
                 if obj.fillMissingFlag
                     arr = obj.fillMissingSlices(obj.METRICKEY{k}, arr);
@@ -218,6 +247,15 @@ classdef GmIdLUT < handle
                 obj.valRange.(obj.METRICKEY{k}) = [vmin vmax];
                 nNan(k) = sum(isnan(arr(:)));
                 obj.grid.(obj.METRICKEY{k}) = arr;
+            end
+
+            % V_TH 是否可用：有 vth 网格且数值有效
+            obj.hasVth = isfield(obj.valRange, 'vth') && all(isfinite(obj.valRange.vth));
+            if obj.hasVth
+                obj.log{end+1} = sprintf('V_TH 已加载：范围 %.3f ~ %.3f V（可用于 region 的「截止」判定）', ...
+                    obj.valRange.vth(1), obj.valRange.vth(2));
+            else
+                obj.log{end+1} = 'V_TH 未加载：region 只判「线性 / 饱和」，不判「截止」。';
             end
 
             obj.log{end+1} = sprintf(['解析 %d 个 block；L=%d 点 (%.4g~%.4g m)，' ...
@@ -352,12 +390,14 @@ classdef GmIdLUT < handle
 
             q = struct();
             q.valid    = false(sz);
+            q.hasVth   = obj.hasVth;
             q.gmID     = gm;
             q.IdW      = nan(sz);
             q.Vgs      = nan(sz);
             q.Vdsat    = nan(sz);
             q.fT       = nan(sz);
             q.selfGain = nan(sz);
+            q.Vth      = nan(sz);
 
             if ~any(inR(:))
                 return;
@@ -371,6 +411,9 @@ classdef GmIdLUT < handle
             q.Vdsat(inR)    = obj.F.vdsat(Li, Vi, Gi);
             q.fT(inR)       = obj.F.fug(Li, Vi, Gi);
             q.selfGain(inR) = obj.F.selfGain(Li, Vi, Gi);
+            if obj.hasVth
+                q.Vth(inR) = obj.F.vth(Li, Vi, Gi);
+            end
 
             q.valid = inR & isfinite(q.IdW) & q.IdW > 0 & ...
                       isfinite(q.Vgs) & isfinite(q.Vdsat) & ...
@@ -402,6 +445,7 @@ classdef GmIdLUT < handle
             out.Vdsat    = q.Vdsat;
             out.fT       = q.fT;
             out.selfGain = q.selfGain;
+            out.Vth      = q.Vth;
             if opt.ValidOnly
                 keep = out.valid;
                 fn = fieldnames(out);
@@ -453,15 +497,18 @@ classdef GmIdLUT < handle
         end
 
         function s = summary(obj)
+            if obj.hasVth, vs = sprintf('已加载 (%.3f ~ %.3f V)', obj.valRange.vth(1), obj.valRange.vth(2));
+            else,          vs = '未加载（region 不判「截止」）'; end
             s = sprintf(['GmIdLUT: %s\n' ...
                 '  数据目录 : %s\n' ...
                 '  L        : %d 点, %.4g ~ %.4g m\n' ...
                 '  VDS      : %d 点, %.4g ~ %.4g V\n' ...
                 '  gm/ID    : %d 点公共网格, %.3f ~ %.3f 1/V\n' ...
+                '  V_TH     : %s\n' ...
                 '  数据块   : %d 个, 构建耗时 %.2f s\n'], ...
                 obj.prefix, obj.dataDir, obj.nL, min(obj.L), max(obj.L), ...
                 obj.nVDS, min(obj.VDS), max(obj.VDS), obj.nGm, ...
-                obj.gmidRange(1), obj.gmidRange(2), obj.blockCount, obj.buildSeconds);
+                obj.gmidRange(1), obj.gmidRange(2), vs, obj.blockCount, obj.buildSeconds);
         end
 
         function saveCache(obj, matPath)

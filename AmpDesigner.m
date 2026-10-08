@@ -24,7 +24,7 @@ C = struct('BG',[0.93 0.94 0.96], 'PANEL',[1 1 1], 'TITLE',[0.12 0.22 0.42], ...
 % 字体：跨平台取本机确实存在的中文字体（纯函数，无 UiKit 中间层）。
 %   ★ 中文版 Windows 的 listfonts 返回「微软雅黑」而不是 "Microsoft YaHei"，
 %     所以候选里必须中英文名都给，否则匹配不上就退化成方框（tofu）。
-%   原理图标注含中文（无数据/饱和/临界），必须用带 CJK 字形的字体。
+%   界面/表格/原理图标注含中文（类型/角色/工作区/无数据 等），必须用带 CJK 字形的字体。
 FCN = pickCjkFont();
 FEN = pickLatinFont();
 FSC = FCN;
@@ -237,8 +237,9 @@ S.refresh(P.circ, res);
 P.refreshProp(P.circ, res);
 onMetric(P, DN, DP);
 onSurf(P, DN, DP);
-nBad = sum(~strcmp({res.devices.sat}, '饱和'));
-P.setStatus(sprintf('计算完成：Av=%.2f dB，%d 个管子非饱和', res.avDb, nBad), 'ok');
+nCut = sum(strcmp({res.devices.sat}, '截止'));
+nLin = sum(strcmp({res.devices.sat}, '线性'));
+P.setStatus(sprintf('计算完成：Av=%.2f dB；截止 %d 个，线性 %d 个', res.avDb, nCut, nLin), 'ok');
 P.log('--- 计算 ---');
 for k = 1:numel(res.warnings), P.log(['  * ' res.warnings{k}]);
     if k > 40, P.log('  * …（更多见命令窗口）'); break; end

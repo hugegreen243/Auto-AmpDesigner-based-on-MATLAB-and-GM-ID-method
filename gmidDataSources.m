@@ -18,6 +18,7 @@ function src = gmidDataSources(rootDir)
 %            'A' = 一个 LEN 行带多个 L 的 waveVsWave 族表（暂不支持）
 %            '?' = 认不出来
 %   ok       逻辑，是否可直接加载
+%   hasVth   逻辑，目录里是否还有可选的 <prefix>_vth.txt（用于 region「截止」判定）
 %
 % 兼容 MATLAB R2018b。
 
@@ -26,7 +27,7 @@ if nargin < 1 || isempty(rootDir) || exist(rootDir, 'dir') ~= 7
     if isempty(rootDir), rootDir = pwd; end
 end
 
-src = struct('label', {}, 'dataDir', {}, 'prefix', {}, 'type', {}, 'fmt', {}, 'ok', {});
+src = struct('label', {}, 'dataDir', {}, 'prefix', {}, 'type', {}, 'fmt', {}, 'ok', {}, 'hasVth', {});
 
 d = dir(fullfile(rootDir, '*_gmIdData_*'));
 for k = 1:numel(d)
@@ -47,8 +48,11 @@ for k = 1:numel(d)
     else
         ty = 'unknown';
     end
+    % 可选：<prefix>_vth.txt 是否存在（只影响 region 的「截止」判定，不影响可加载性）
+    hasVth = exist(fullfile(rootDir, folder, [folder '_vth.txt']), 'file') == 2;
     switch fmt
-        case 'B', tick = '可加载';
+        case 'B'
+            if hasVth, tick = '可加载，含Vth'; else, tick = '可加载'; end
         case 'A', tick = '格式A，暂不支持';
         otherwise, tick = '格式未知';
     end
@@ -58,7 +62,8 @@ for k = 1:numel(d)
         'prefix',  folder, ...
         'type',    ty, ...
         'fmt',     fmt, ...
-        'ok',      strcmp(fmt, 'B'));
+        'ok',      strcmp(fmt, 'B'), ...
+        'hasVth',  hasVth);
 end
 
 % 可加载的排前面

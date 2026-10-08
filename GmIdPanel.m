@@ -201,7 +201,7 @@ classdef GmIdPanel < handle
 
             % 结果页
             P.pnlRes = P.mkPlainPanel(F, C.BG);
-            % 表格字体必须用 CJK 字体：表头/单元格里有「类型 / 角色 / 裕量 / 饱和 / 来源」
+            % 表格字体必须用 CJK 字体：表头/单元格里有「类型 / 角色 / 裕量 / 工作区 / 来源」
             % 这些中文，若用 Segoe UI 这类无 CJK 的拉丁字体，Java 表格渲染会出方块 □。
             P.tblDesign = uitable('Parent', P.pnlRes, 'Units', 'pixels', ...
                 'Position', P.sc([0 0 100 100]), ...
@@ -717,11 +717,23 @@ classdef GmIdPanel < handle
             else
                 set(P.lblSrc, 'String', '查 LUT（有数据）');
             end
-            set(P.lblRead1, 'String', sprintf('Id=%.4g uA   W=%.4g um   Vgs=%.4g V   Vdsat=%.4g V   gm/gds=%.1f   fT=%.4g GHz', ...
-                d.Id*1e6, d.W*1e6, d.Vgs, d.Vdsat, d.selfGain, d.fT/1e9));
-            if strcmp(d.sat, '饱和'), col = [0.10 0.55 0.25];
-            elseif strcmp(d.sat, '临界'), col = [0.85 0.55 0.10];
-            else, col = P.C.DANGER; end
+            if isfinite(d.Vth)
+                set(P.lblRead1, 'String', sprintf('Id=%.4g uA   W=%.4g um   Vgs=%.4g V   Vth=%.4g V   Vdsat=%.4g V   gm/gds=%.1f   fT=%.4g GHz', ...
+                    d.Id*1e6, d.W*1e6, d.Vgs, d.Vth, d.Vdsat, d.selfGain, d.fT/1e9));
+            else
+                set(P.lblRead1, 'String', sprintf('Id=%.4g uA   W=%.4g um   Vgs=%.4g V   Vth=--   Vdsat=%.4g V   gm/gds=%.1f   fT=%.4g GHz', ...
+                    d.Id*1e6, d.W*1e6, d.Vgs, d.Vdsat, d.selfGain, d.fT/1e9));
+            end
+            if ~isfinite(d.region)
+                col = P.C.DANGER;                              % 不可用
+            elseif d.region == 2
+                if d.nearSat, col = [0.85 0.55 0.10];          % 饱和但裕量偏小
+                else,         col = [0.10 0.55 0.25]; end      % 饱和
+            elseif d.region == 1
+                col = [0.85 0.55 0.10];                        % 线性区
+            else
+                col = P.C.DANGER;                              % 截止
+            end
             set(P.lblRead2, 'String', sprintf('|VDS|act=%.4g V   裕量=%+.4g V   %s   gm=%.4g uS   L(数据)=%.4g um', ...
                 d.VDSact, d.margin, d.sat, d.gm*1e6, d.L*1e6));
             set(P.lblRead2, 'ForegroundColor', col);

@@ -6,13 +6,14 @@ function [cols, data] = ampDesignTable(res)
 % cols : 1 x 16 cellstr 列名
 % data : nDev x 16 cell，全部是字符串
 %   器件 类型 角色 Id(uA) gm/ID L(um) VDS(V) Vgs(V) Vdsat(V) |VDS|act(V) 裕量(V)
-%   fT(GHz) gm/gds W(um) 饱和 来源
+%   fT(GHz) gm/gds W(um) 工作区 来源
+%   其中「工作区」取值：截止 / 线性 / 饱和 / 不可用（对应 region 0/1/2）。
 %
 % 兼容 MATLAB R2018b。
 
 dev  = res.devices;
 cols = {'器件','类型','角色','Id (uA)','gm/ID (1/V)','L (um)','VDS (V)','Vgs (V)', ...
-        'Vdsat (V)','|VDS|act (V)','裕量 (V)','fT (GHz)','gm/gds','W (um)','饱和','来源'};
+        'Vdsat (V)','|VDS|act (V)','裕量 (V)','fT (GHz)','gm/gds','W (um)','工作区','来源'};
 n = numel(dev);
 data = cell(n, numel(cols));
 for k = 1:n

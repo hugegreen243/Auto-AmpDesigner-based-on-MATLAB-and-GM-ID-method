@@ -6,7 +6,7 @@ classdef GmIdData < handle
 %   D = GmIdData();            % 扫描
 %   D.list()                   % 打印可用数据源
 %   ok = D.load(1);            % 按索引加载（ok=false = 格式不支持）
-%   q  = D.query(L, VDS, gmID) % IdW/Vgs/Vdsat/fT/selfGain
+%   q  = D.query(L, VDS, gmID) % IdW/Vgs/Vdsat/fT/selfGain/Vth（Vth 可能为 NaN）
 %   [L, V, g] = D.axesInfo()   % 数据点与 gm/ID 范围（给下拉/滑块用）
 %
 % 兼容 MATLAB R2018b。
@@ -109,9 +109,15 @@ classdef GmIdData < handle
                 case 'vdsat',          v = q.Vdsat;
                 case 'fug',            v = q.fT;
                 case 'selfGain',       v = q.selfGain;
+                case 'vth',            v = q.Vth;
                 otherwise, error('GmIdData:badMetric', '未知指标 %s', name);
             end
             unit = obj.lut.metricUnit(name);
+        end
+
+        function tf = hasVth(obj)
+            %HASVTH 该数据源是否加载了可选的 V_TH 数据。
+            tf = ~isempty(obj.lut) && obj.lut.hasVth;
         end
 
         function w = width(obj, Id, L, VDS, gmID)

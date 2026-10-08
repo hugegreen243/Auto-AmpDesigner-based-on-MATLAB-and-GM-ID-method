@@ -5,7 +5,7 @@ classdef GmIdCircuit < handle
 %   C.setSpecs(struct('GBW',10e6,'SR',10e6,'ISS',20e-6,'CL',2e-12,'VDD',1.8))
 %   C.initFromSpecs()                   「初始化」：按策略选点（VDS 给默认值，可逐管改）
 %   C.setDevice('M1','VDS',0.25)         改单管 L / VDS / gmID（VDS 全部用户自定义）
-%   res = C.solve()                      求解（电流/节点电压/饱和/增益/KCL）
+%   res = C.solve()                      求解（电流/节点电压/工作区 region/增益/KCL）
 %
 % 数据源：dataN 是 NMOS 的 gm/ID 数据（GmIdData），dataP 是 PMOS 的；哪个没加载，
 %         对应 type 的器件就标「无数据」（source='nodata'，W/Vgs/Vdsat/selfGain 为 NaN）。
@@ -23,6 +23,14 @@ classdef GmIdCircuit < handle
 %   · 某条边 VDS 还没填（NaN）→ 该方向传不过去，下游 net 显示「—」，不报错；
 %   · net 电压 > VDD（或 < 0）→ 标红警告（超压 / 负压），但照常显示。
 %   VDD 不再是预设 rail：它的电压同样由链推出来，与 specs.VDD 比较即可看出裕量。
+%
+% 工作区（region）判定（三种基本区，逐个器件）：
+%   0 截止  : Vgs < Vth        （Vth 来自可选的 _vth.txt；没有该数据则跳过此项）
+%   1 线性  : Vgs >= Vth 且 |VDS| <  Vdsat   （三极管区）
+%   2 饱和  : Vgs >= Vth 且 |VDS| >= Vdsat
+%   结果存在 dev.region (0/1/2) 与 dev.sat ('截止'/'线性'/'饱和'/'不可用')。
+%   margin = |VDS| - Vdsat 仍保留；0 <= margin < satMargin 记「临界」（只告警，不占 region）。
+%   注：Vgs 由 LUT 得到，故 gm/ID 偏高（弱反型）时可能 Vgs<Vth 判为「截止」。这是经典判据。
 %
 % 兼容 MATLAB R2018b。
 
@@ -196,20 +204,26 @@ classdef GmIdCircuit < handle
                 if isfinite(vh) && isfinite(vl), vdsAct = abs(vh - vl); else, vdsAct = NaN; end
                 dev(k).VDSact = vdsAct;
                 if ~dev(k).ok
-                    % 无数据 / 不可用：不判饱和
+                    % 无数据 / 不可用：不判 region
                     dev(k).margin = NaN;
+                    dev(k).region = NaN;
+                    dev(k).nearSat = false;
                     dev(k).sat = '不可用';
                 else
-                    % 饱和判据一律用「查表实际用的工作点 VDS」（dev(k).VDS = 用户输入）。
-                    % 无权威链后，同一 net 上各边 VDS 由用户各自填写，节点差可能与该管
-                    % 输入值略有出入；器件特性毕竟是按用户给的 VDS 查的表，故以它为准。
+                    % 饱和裕量用「查表实际用的工作点 VDS」（dev(k).VDS = 用户输入）。
                     dev(k).margin = dev(k).VDS - dev(k).Vdsat;
-                    if dev(k).margin >= obj.satMargin
-                        dev(k).sat = '饱和';
+                    % 临界：裕量落在 [0, satMargin) 时给告警，但仍算「饱和」
+                    dev(k).nearSat = (dev(k).margin >= 0) && (dev(k).margin < obj.satMargin);
+                    % ---- region 判定：截止(0) / 线性(1) / 饱和(2) ----
+                    %   截止：Vgs < Vth（经典判据）。Vth 来自可选的 vth 数据；
+                    %        没有 vth 数据时 Vth=NaN，跳过该项，只判 线性/饱和。
+                    %   其余：|VDS| >= Vdsat → 饱和；|VDS| < Vdsat → 线性。
+                    if isfinite(dev(k).Vth) && isfinite(dev(k).Vgs) && dev(k).Vgs < dev(k).Vth
+                        dev(k).region = 0;  dev(k).sat = '截止';
                     elseif dev(k).margin >= 0
-                        dev(k).sat = '临界';
+                        dev(k).region = 2;  dev(k).sat = '饱和';
                     else
-                        dev(k).sat = '不饱和';
+                        dev(k).region = 1;  dev(k).sat = '线性';
                     end
                 end
             end
@@ -243,6 +257,7 @@ classdef GmIdCircuit < handle
                     if q.valid
                         dev(k).ok = true;
                         dev(k).Vgs = q.Vgs;  dev(k).Vdsat = q.Vdsat;
+                        dev(k).Vth = q.Vth;   % 可选 vth 数据；没有则为 NaN
                         dev(k).fT = q.fT;    dev(k).selfGain = q.selfGain;
                         dev(k).W = dev(k).Id / q.IdW;
                         if abs(vdsLook - s.VDS) > 1e-9
@@ -480,7 +495,8 @@ classdef GmIdCircuit < handle
             res.objectiveUsed = 'manual/interactive';
             res.inputSel = struct('L', dev(iIn).L, 'VDS', dev(iIn).VDS, 'gmid', dev(iIn).gmid, ...
                 'IdW', dev(iIn).Id/max(dev(iIn).W,eps), 'Vgs', dev(iIn).Vgs, ...
-                'Vdsat', dev(iIn).Vdsat, 'fT', dev(iIn).fT, 'selfGain', dev(iIn).selfGain);
+                'Vth', dev(iIn).Vth, 'Vdsat', dev(iIn).Vdsat, 'fT', dev(iIn).fT, ...
+                'selfGain', dev(iIn).selfGain, 'region', dev(iIn).region, 'sat', dev(iIn).sat);
             res.warnings = obj.collectWarnings(dev, nodes, g, a);
             [res.tableCols, res.tableData] = ampDesignTable(res);
         end
@@ -490,10 +506,13 @@ classdef GmIdCircuit < handle
             for k = 1:numel(dev)
                 if ~dev(k).ok
                     w{end+1} = sprintf('%s: %s', dev(k).name, dev(k).note); %#ok<AGROW>
-                elseif strcmp(dev(k).sat, '不饱和')
-                    w{end+1} = sprintf('%s 不饱和：工作点 |VDS|=%.3f V < Vdsat=%.3f V（差 %.3f V）', ...
+                elseif strcmp(dev(k).sat, '截止')
+                    w{end+1} = sprintf('%s 截止：Vgs=%.3f V < Vth=%.3f V（该管未充分反型/不导通）', ...
+                        dev(k).name, dev(k).Vgs, dev(k).Vth); %#ok<AGROW>
+                elseif strcmp(dev(k).sat, '线性')
+                    w{end+1} = sprintf('%s 线性区（三极管区）：工作点 |VDS|=%.3f V < Vdsat=%.3f V（差 %.3f V）', ...
                         dev(k).name, dev(k).VDS, dev(k).Vdsat, -dev(k).margin); %#ok<AGROW>
-                elseif strcmp(dev(k).sat, '临界')
+                elseif dev(k).nearSat
                     w{end+1} = sprintf('%s 临界饱和：|VDS|-Vdsat=%.3f V，裕量偏小', ...
                         dev(k).name, dev(k).margin); %#ok<AGROW>
                 end
@@ -549,8 +568,9 @@ classdef GmIdCircuit < handle
 
         function d = blankDev(obj) %#ok<MANU>
             d = struct('name','','type','','role','','Id',NaN,'gmid',NaN,'L',NaN, ...
-                'VDS',NaN,'VDSact',NaN,'Vgs',NaN,'Vdsat',NaN,'fT',NaN,'selfGain',NaN, ...
-                'W',NaN,'gm',NaN,'source','','ok',false,'margin',NaN,'sat','','note','');
+                'VDS',NaN,'VDSact',NaN,'Vgs',NaN,'Vdsat',NaN,'Vth',NaN,'fT',NaN,'selfGain',NaN, ...
+                'W',NaN,'gm',NaN,'source','','ok',false,'margin',NaN,'region',NaN, ...
+                'nearSat',false,'sat','','note','');
         end
     end
 end

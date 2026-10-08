@@ -21,7 +21,7 @@ classdef GmIdSchematic < handle
     properties
         ax
         C
-        FNT = 'Microsoft YaHei'   % 图上标注含中文（无数据/饱和/临界）；
+        FNT = 'Microsoft YaHei'   % 图上标注含中文（器件名/网络名/「无数据」提示等）；
                                   % 构造函数会用 pickCjkFont 换成本机可用 CJK 字体
         sel = ''
         idx = struct('dev', struct('name',{},'x',{},'y',{},'H',{},'side',{},'kind',{}), ...
